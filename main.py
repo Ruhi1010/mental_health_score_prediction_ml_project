@@ -57,7 +57,7 @@ def greet():
 @app.post("/predict", response_model=PredictionResponse)
 def predict(data: StudentData):
     
-    country_group = top_countries if data.Country in top_countries else 'Other'
+    country_group = data.Country if data.Country in top_countries else 'Other'
     
     input_row = pd.DataFrame([{
         'Age'                      : data.Age,
