@@ -1,7 +1,13 @@
 (() => {
   "use strict";
 
-  const API_BASE = "https://mental-health-score-prediction-ml.onrender.com";
+  const LOCAL_HOSTS = ["127.0.0.1", "localhost", "", "[::1]"];
+  const isLocal =
+    window.location.protocol === "file:" ||
+    LOCAL_HOSTS.includes(window.location.hostname);
+  const API_BASE = isLocal
+    ? "http://127.0.0.1:8000"
+    : "https://mental-health-score-prediction-ml.onrender.com";
 
   const form = document.getElementById("predict-form");
   const submitBtn = document.getElementById("submit-btn");
@@ -130,6 +136,23 @@
   // ---------------------------------------------------------
   // Gather form data into the exact StudentData shape
   // ---------------------------------------------------------
+  // Maps the internal (lowercase, form-id-friendly) key to the exact
+  // field name the FastAPI/Pydantic StudentData model expects.
+  const API_FIELD_NAME = {
+    age: "Age",
+    gender: "Gender",
+    country: "Country",
+    academic_level: "Academic_Level",
+    most_used_platform: "Most_Used_Platform",
+    purpose_of_use: "Purpose_Of_Use",
+    avg_daily_usage_hours: "Avg_Daily_Usage_Hours",
+    daily_unlocks: "Daily_Unlocks",
+    study_hours: "Study_Hours",
+    physical_activity_hours: "Physical_Activity_Hours",
+    sleep_hours_per_night: "Sleep_Hours_Per_Night",
+    stress_level: "Stress_Level",
+  };
+
   function collectPayload() {
     const fd = new FormData(form);
     return {
@@ -146,6 +169,16 @@
       sleep_hours_per_night: fd.get("sleep_hours_per_night") === "" ? NaN : parseFloat(fd.get("sleep_hours_per_night")),
       stress_level: fd.get("stress_level") || "",
     };
+  }
+
+  // Convert the internal-keyed payload into the exact shape the API expects.
+  function toApiPayload(payload) {
+    const out = {};
+    Object.keys(payload).forEach((key) => {
+      const apiKey = API_FIELD_NAME[key] || key;
+      out[apiKey] = payload[key];
+    });
+    return out;
   }
 
   // ---------------------------------------------------------
@@ -210,11 +243,16 @@
   // Parse FastAPI / Pydantic 422 error responses into
   // field-level messages where possible
   // ---------------------------------------------------------
+  const FORM_FIELD_NAME = Object.fromEntries(
+    Object.entries(API_FIELD_NAME).map(([formKey, apiKey]) => [apiKey, formKey])
+  );
+
   function applyServerValidationErrors(detail) {
     if (!Array.isArray(detail)) return false;
     let matched = false;
     detail.forEach((err) => {
-      const field = Array.isArray(err.loc) ? err.loc[err.loc.length - 1] : null;
+      const rawField = Array.isArray(err.loc) ? err.loc[err.loc.length - 1] : null;
+      const field = rawField ? FORM_FIELD_NAME[rawField] || rawField : null;
       const input = field ? document.getElementById(field) : null;
       const target = field === "stress_level" ? stressHiddenInput : input;
       if (target) {
@@ -248,7 +286,7 @@
       const res = await fetch(`${API_BASE}/predict`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(toApiPayload(payload)),
       });
 
       if (res.status === 422) {
